@@ -15,18 +15,24 @@ os.makedirs(AUDIO_FOLDER, exist_ok=True)
 _jobs = {}
 
 
-def _run_pipeline(job_id, image_path, user_genre=None, user_mood=None, user_vocals=None, user_tempo=None):
+def _run_pipeline(job_id, image_paths, user_genre=None, user_mood=None, user_vocals=None, user_tempo=None):
     try:
         import visionApi
         import lyriaApi
 
-        _jobs[job_id]['message'] = 'Uploading image to cloud storage...'
-        gcs_uri = visionApi.upload_single_image(image_path)
+        count = len(image_paths)
+        _jobs[job_id]['message'] = f'Uploading {"images" if count > 1 else "image"} to cloud storage...'
+        gcs_uris = [visionApi.upload_single_image(p) for p in image_paths]
 
-        _jobs[job_id]['message'] = 'Analyzing image with Gemini 2.5...'
-        description, lyrics, genre, music_desc = visionApi.run_summarization(
-            gcs_uri, user_genre=user_genre, user_mood=user_mood, user_vocals=user_vocals
-        )
+        _jobs[job_id]['message'] = f'Analyzing {"images" if count > 1 else "image"} with Gemini 2.5...'
+        if count == 1:
+            description, lyrics, genre, music_desc = visionApi.run_summarization(
+                gcs_uris[0], user_genre=user_genre, user_mood=user_mood, user_vocals=user_vocals
+            )
+        else:
+            description, lyrics, genre, music_desc = visionApi.run_multi_summarization(
+                gcs_uris, user_genre=user_genre, user_mood=user_mood, user_vocals=user_vocals
+            )
 
         _jobs[job_id]['message'] = f'Composing {genre.strip()} music with Lyria...'
         audio_filename = lyriaApi.generate_music(
@@ -56,16 +62,22 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process():
-    if 'image' not in request.files:
+    files = request.files.getlist('image')
+    files = [f for f in files if f and f.filename]
+    if not files:
         return jsonify({'error': 'No image provided'}), 400
-    f = request.files['image']
-    if not f.filename:
-        return jsonify({'error': 'Empty filename'}), 400
+    if len(files) > 5:
+        return jsonify({'error': 'Maximum 5 images allowed'}), 400
 
-    ext = os.path.splitext(f.filename)[1].lower() or '.jpg'
-    filename = f"{uuid.uuid4()}{ext}"
-    image_path = os.path.join(UPLOAD_FOLDER, filename)
-    f.save(image_path)
+    image_paths = []
+    image_filenames = []
+    for f in files:
+        ext = os.path.splitext(f.filename)[1].lower() or '.jpg'
+        filename = f"{uuid.uuid4()}{ext}"
+        image_path = os.path.join(UPLOAD_FOLDER, filename)
+        f.save(image_path)
+        image_paths.append(image_path)
+        image_filenames.append(filename)
 
     job_id = str(uuid.uuid4())
     _jobs[job_id] = {'status': 'processing', 'message': 'Starting pipeline...'}
@@ -77,10 +89,10 @@ def process():
 
     threading.Thread(
         target=_run_pipeline,
-        args=(job_id, image_path, user_genre, user_mood, user_vocals, user_tempo),
+        args=(job_id, image_paths, user_genre, user_mood, user_vocals, user_tempo),
         daemon=True
     ).start()
-    return jsonify({'job_id': job_id, 'image_filename': filename})
+    return jsonify({'job_id': job_id, 'image_filenames': image_filenames})
 
 
 @app.route('/status/<job_id>')
