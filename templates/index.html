@@ -139,18 +139,19 @@
 
     .hero {
       text-align: center;
-      margin-bottom: 36px;
+      margin-bottom: 20px;
     }
 
-    .hero .eyebrow { margin-bottom: 18px; }
+    .hero .eyebrow { margin-bottom: 12px; }
 
     .hero h1 {
       font-family: 'Playfair Display', serif;
-      font-size: 56px;
+      font-size: 52px;
       font-weight: 400;
       line-height: 1.05;
       letter-spacing: -0.02em;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
+      white-space: nowrap;
     }
     .hero h1 em { font-style: italic; }
 
@@ -175,7 +176,7 @@
 
     /* Empty state */
     .dz-empty {
-      padding: 64px 32px;
+      padding: 140px 32px;
       text-align: center;
       cursor: pointer;
     }
@@ -196,7 +197,7 @@
     .dz-filled {
       display: none;
       flex-direction: column;
-      padding: 20px 24px;
+      padding: 36px 32px;
       gap: 20px;
     }
     .dz-filled.visible { display: flex; }
@@ -211,18 +212,45 @@
 
     .dz-thumb {
       position: relative;
-      width: 96px;
-      height: 96px;
+      width: 200px;
+      height: 200px;
       flex-shrink: 0;
       border-radius: 4px;
       overflow: hidden;
       background: #000;
+      cursor: grab;
+      transition: opacity 0.15s, box-shadow 0.1s;
     }
+    .dz-thumb.dragging { opacity: 0.35; cursor: grabbing; }
+    .dz-thumb.drag-over { box-shadow: -3px 0 0 0 #6ee7b7; }
     .dz-thumb img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       display: block;
+      pointer-events: none;
+    }
+    .order-badge {
+      position: absolute;
+      bottom: 4px;
+      left: 4px;
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      background: rgba(0,0,0,.72);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .dz-reorder-hint {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: .04em;
+      margin: 0;
     }
     .dz-thumb-remove {
       position: absolute;
@@ -245,8 +273,8 @@
     .dz-thumb-remove:hover { background: rgba(180,60,60,.85); }
 
     .dz-add-tile {
-      width: 96px;
-      height: 96px;
+      width: 200px;
+      height: 200px;
       flex-shrink: 0;
       border-radius: 4px;
       border: 1px dashed var(--border);
@@ -778,12 +806,12 @@
     <div class="screen active" id="screen-upload">
       <div class="hero">
         <div class="eyebrow">Image - - > <b style="color:#6ee7b7">Magic</b> - - > Music</div>
-        <h1>Compose music<br>from <em>any</em> photo.</h1>
+        <h1>Music, but with a <em>personal</em> touch</h1>
         <p>Upload an image to get started.</p>
       </div>
 
       <div class="dropzone" id="dropzone">
-        <input type="file" id="file-input" accept="image/*" style="display:none">
+        <input type="file" id="file-input" accept="image/*" multiple style="display:none">
 
         <!-- Empty state -->
         <div class="dz-empty" id="dz-empty" onclick="document.getElementById('file-input').click()">
@@ -796,6 +824,7 @@
           <div class="dz-strip" id="dz-strip">
             <!-- thumbnails injected by JS -->
           </div>
+          <p class="dz-reorder-hint" id="dz-reorder-hint" style="display:none">Drag to reorder · photos tell the story left to right</p>
           <div class="dz-actions">
             <button class="btn-primary" onclick="startGeneration(event)">Compose →</button>
           </div>
@@ -997,6 +1026,7 @@
   let pollTimer = null;
   let carouselTimer = null;
   let currentAudioFilename = null;
+  let dragSrcIdx = null;
 
   const audio = document.getElementById('audio');
 
@@ -1068,6 +1098,7 @@
     imageDataUrls.forEach((url, idx) => {
       const wrap = document.createElement('div');
       wrap.className = 'dz-thumb';
+      wrap.draggable = true;
 
       const img = document.createElement('img');
       img.src = url;
@@ -1079,8 +1110,45 @@
       btn.title = 'Remove';
       btn.onclick = ev => { ev.stopPropagation(); removeFile(idx); };
 
+      const badge = document.createElement('div');
+      badge.className = 'order-badge';
+      badge.textContent = idx + 1;
+
+      wrap.addEventListener('dragstart', e => {
+        dragSrcIdx = idx;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(idx));
+        requestAnimationFrame(() => wrap.classList.add('dragging'));
+        e.stopPropagation();
+      });
+      wrap.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (idx === dragSrcIdx) return;
+        strip.querySelectorAll('.dz-thumb').forEach(t => t.classList.remove('drag-over'));
+        wrap.classList.add('drag-over');
+      });
+      wrap.addEventListener('dragleave', () => wrap.classList.remove('drag-over'));
+      wrap.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (dragSrcIdx === null || dragSrcIdx === idx) return;
+        const [movedFile] = selectedFiles.splice(dragSrcIdx, 1);
+        const [movedUrl]  = imageDataUrls.splice(dragSrcIdx, 1);
+        const insertAt = dragSrcIdx < idx ? idx - 1 : idx;
+        selectedFiles.splice(insertAt, 0, movedFile);
+        imageDataUrls.splice(insertAt, 0, movedUrl);
+        dragSrcIdx = null;
+        renderStrip();
+      });
+      wrap.addEventListener('dragend', () => {
+        dragSrcIdx = null;
+        strip.querySelectorAll('.dz-thumb').forEach(t => t.classList.remove('dragging', 'drag-over'));
+      });
+
       wrap.appendChild(img);
       wrap.appendChild(btn);
+      wrap.appendChild(badge);
       strip.appendChild(wrap);
     });
 
@@ -1091,6 +1159,8 @@
       addTile.onclick = () => fileInput.click();
       strip.appendChild(addTile);
     }
+
+    document.getElementById('dz-reorder-hint').style.display = selectedFiles.length > 1 ? '' : 'none';
 
     if (selectedFiles.length > 0) {
       document.getElementById('dz-empty').style.display = 'none';
@@ -1140,8 +1210,13 @@ function fmtBytes(n) {
 
     buildCarousel(document.getElementById('loading-img-wrap'), imageDataUrls);
     const count = selectedFiles.length;
-    document.getElementById('loading-hint').textContent =
-      `${count > 1 ? count + ' images · ' : ''}Usually 60–90 seconds. ${controls.genre} · ${controls.mood.toLowerCase()} · ${controls.tempo} bpm.`;
+    const hintParts = [`${count > 1 ? count + ' images · ' : ''}Usually 60–90 seconds.`];
+    const specParts = [];
+    if (controlsEnabled.genre) specParts.push(controls.genre);
+    if (controlsEnabled.mood)  specParts.push(controls.mood.toLowerCase());
+    if (controlsEnabled.tempo) specParts.push(`${controls.tempo} bpm`);
+    if (specParts.length) hintParts.push(specParts.join(' · '));
+    document.getElementById('loading-hint').textContent = hintParts.join(' ');
 
     resetSteps();
     showScreen('loading');

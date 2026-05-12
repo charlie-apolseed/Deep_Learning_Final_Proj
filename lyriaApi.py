@@ -9,7 +9,7 @@ def generate_music(_image_description, lyrics, genre, music_description, mood=No
     """Generate a music clip and save it to clips/. Returns the saved filename."""
     os.makedirs("clips", exist_ok=True)
 
-    prompt = f"Create a 30-second {genre} song based on this description: {music_description}."
+    prompt = f"Create a 2-4 minute {genre} song based on this description: {music_description}."
     if mood:
         prompt += f" The overall mood should be {mood.lower()}."
     if vocals == 'Instrumental':
@@ -21,7 +21,7 @@ def generate_music(_image_description, lyrics, genre, music_description, mood=No
     prompt += f" Here are some lyrics for inspiration: {lyrics}"
 
     response = client.models.generate_content(
-        model="lyria-3-clip-preview",
+        model="lyria-3-pro-preview",
         contents=prompt,
     )
 
