@@ -51,7 +51,7 @@ def upload_images_to_bucket():
         print(f"Folder '{img_path}' does not exist")
 
 
-def run_summarization(image_uri=IMAGE_URI):
+def run_summarization(image_uri=IMAGE_URI, user_genre=None, user_mood=None, user_vocals=None):
     MODEL = "gemini-2.5-flash"
     ext = os.path.splitext(image_uri)[1].lower()
     mime_type = _MIME_TYPES.get(ext, 'image/jpeg')
@@ -64,45 +64,55 @@ def run_summarization(image_uri=IMAGE_URI):
     )
     sleep(2)
 
+    mood_hint = f" The mood of the song should feel {user_mood.lower()}." if user_mood else ""
+    vocals_hint = (
+        " Write instrumental-only lyrics (no sung lines, just descriptive scene-setting stanzas)."
+        if user_vocals == 'Instrumental'
+        else f" The vocals should feel suited to a {user_vocals.lower()} voice." if user_vocals else ""
+    )
     lyrics = client.models.generate_content(
         model=MODEL,
-        contents=["Write a 4 verse song about the following image description: " + response.text],
-    )
-    sleep(2)
-
-    genre = client.models.generate_content(
-        model=MODEL,
         contents=[
-            """Based on the following image description, suggest a single music genre
-        that would fit well with the theme. Only return the name of the genre and
-        nothing else: """ + response.text
+            "Write a 4 verse song about the following image description: "
+            + response.text + mood_hint + vocals_hint
         ],
     )
-
     sleep(2)
+
+    if user_genre:
+        genre_text = user_genre
+    else:
+        genre_resp = client.models.generate_content(
+            model=MODEL,
+            contents=[
+                """Based on the following image description, suggest a single music genre
+        that would fit well with the theme. Only return the name of the genre and
+        nothing else: """ + response.text
+            ],
+        )
+        sleep(2)
+        genre_text = genre_resp.text
+
     music_description = client.models.generate_content(
         model=MODEL,
         contents=[
-            """Based on the following image description, suggest a set of musical
-        instrument that would fit well with the theme. Do not give any explanation or reasoning, I just
-        want a list of 3-5 instruments to match the song in the following genre and description: """
-            + genre.text + response.text
+            "Based on the following image description, suggest a set of musical"
+            " instruments that would fit well with the theme. Do not give any explanation or reasoning, I just"
+            " want a list of 3-5 instruments to match the song in the following genre and description: "
+            + genre_text + " " + response.text
         ],
     )
 
     print("\n--- Image Summary ---")
     print(response.text)
-
     print("\n--- Song Lyrics ---")
     print(lyrics.text)
-
     print("\n--- Music Genre ---")
-    print(genre.text)
-
+    print(genre_text)
     print("\n--- Music Description ---")
     print(music_description.text)
 
-    return response.text, lyrics.text, genre.text, music_description.text
+    return response.text, lyrics.text, genre_text, music_description.text
 
 
 if __name__ == "__main__":

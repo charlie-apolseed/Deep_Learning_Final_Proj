@@ -2,19 +2,27 @@ from google import genai
 import os
 import time
 
-client = genai.Client(api_key="AIzaSyCIk8g8vRtWm8VEDUTlnbS5D8vpEfKR-KQ")
+client = genai.Client(api_key=os.environ["GOOGLE_GENAI_API_KEY"])
 
 
-def generate_music(_image_description, lyrics, genre, music_description):
+def generate_music(_image_description, lyrics, genre, music_description, mood=None, vocals=None, tempo=None):
     """Generate a music clip and save it to clips/. Returns the saved filename."""
     os.makedirs("clips", exist_ok=True)
 
+    prompt = f"Create a 30-second {genre} song based on this description: {music_description}."
+    if mood:
+        prompt += f" The overall mood should be {mood.lower()}."
+    if vocals == 'Instrumental':
+        prompt += " This is an instrumental track — no vocals."
+    elif vocals:
+        prompt += f" Feature {vocals.lower()} vocals."
+    if tempo:
+        prompt += f" Target a tempo of approximately {tempo} BPM."
+    prompt += f" Here are some lyrics for inspiration: {lyrics}"
+
     response = client.models.generate_content(
         model="lyria-3-clip-preview",
-        contents=(
-            f"Create a 30-second {genre} song based on this description: {music_description}."
-            f" Here are some lyrics for inspiration: {lyrics}"
-        ),
+        contents=prompt,
     )
 
     audio_filename = None

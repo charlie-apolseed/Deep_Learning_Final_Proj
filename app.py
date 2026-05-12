@@ -15,7 +15,7 @@ os.makedirs(AUDIO_FOLDER, exist_ok=True)
 _jobs = {}
 
 
-def _run_pipeline(job_id, image_path):
+def _run_pipeline(job_id, image_path, user_genre=None, user_mood=None, user_vocals=None, user_tempo=None):
     try:
         import visionApi
         import lyriaApi
@@ -24,10 +24,15 @@ def _run_pipeline(job_id, image_path):
         gcs_uri = visionApi.upload_single_image(image_path)
 
         _jobs[job_id]['message'] = 'Analyzing image with Gemini 2.5...'
-        description, lyrics, genre, music_desc = visionApi.run_summarization(gcs_uri)
+        description, lyrics, genre, music_desc = visionApi.run_summarization(
+            gcs_uri, user_genre=user_genre, user_mood=user_mood, user_vocals=user_vocals
+        )
 
         _jobs[job_id]['message'] = f'Composing {genre.strip()} music with Lyria...'
-        audio_filename = lyriaApi.generate_music(description, lyrics, genre, music_desc)
+        audio_filename = lyriaApi.generate_music(
+            description, lyrics, genre, music_desc,
+            mood=user_mood, vocals=user_vocals, tempo=user_tempo
+        )
 
         if not audio_filename:
             raise RuntimeError('Lyria returned no audio data.')
@@ -40,6 +45,7 @@ def _run_pipeline(job_id, image_path):
             'audio_filename': audio_filename,
         })
     except Exception as e:
+        import traceback; traceback.print_exc()
         _jobs[job_id].update({'status': 'error', 'message': str(e)})
 
 
@@ -64,7 +70,16 @@ def process():
     job_id = str(uuid.uuid4())
     _jobs[job_id] = {'status': 'processing', 'message': 'Starting pipeline...'}
 
-    threading.Thread(target=_run_pipeline, args=(job_id, image_path), daemon=True).start()
+    user_genre  = request.form.get('genre')  or None
+    user_mood   = request.form.get('mood')   or None
+    user_vocals = request.form.get('vocals') or None
+    user_tempo  = request.form.get('tempo')  or None
+
+    threading.Thread(
+        target=_run_pipeline,
+        args=(job_id, image_path, user_genre, user_mood, user_vocals, user_tempo),
+        daemon=True
+    ).start()
     return jsonify({'job_id': job_id, 'image_filename': filename})
 
 
